@@ -7,23 +7,20 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 
 	secrets "github.com/BlueSageSolutions/secrets/cmd"
 )
 
 type SystemInfo struct {
-	Version             sql.NullInt64  `json:"version"`
-	EffectiveDateTime   sql.NullTime   `json:"effective_date_time"`
-	ExpirationDateTime  sql.NullTime   `json:"expiration_date_time"`
 	SystemName          sql.NullString `json:"system_name"`
 	URL                 sql.NullString `json:"url"`
-	UserName            sql.NullString `json:"user_name"`
+	Username            sql.NullString `json:"user_name"`
 	Password            sql.NullString `json:"password"`
 	EnabledYN           bool           `json:"enabled_yn"`
 	Notes               sql.NullString `json:"notes"`
 	SystemProperties    sql.NullString `json:"system_properties"`
-	SecretManagerID     sql.NullString `json:"secret_manager_id"`
 	ConfigData          sql.NullString `json:"config_data"`
 	ValidationClassName sql.NullString `json:"validation_class_name"`
 	AwsSystemType       sql.NullString `json:"aws_system_type"`
@@ -31,6 +28,10 @@ type SystemInfo struct {
 
 func Sluggify(input string) string {
 	return strings.ToLower(strings.ReplaceAll(input, " ", "-"))
+}
+
+func Unsluggify(input string) string {
+	return strings.ToUpper(strings.ReplaceAll(input, "-", " "))
 }
 
 func GetDatabaseConnection(client, environment string) (*sql.DB, error) {
@@ -47,18 +48,54 @@ func GetDatabaseConnection(client, environment string) (*sql.DB, error) {
 	return db, nil
 }
 
-func SetSystemInfo(profile, region, sluggifiedName, client, environment string, systemInfo SystemInfo) error {
-	parameterValue, err := json.Marshal(systemInfo)
-	if err != nil {
-		return fmt.Errorf("failed to marshal system info to JSON: %v", err)
-	}
+func Normalize(systemInfo SystemInfo) (string, error) {
+	normal := make(map[string]string, 0)
 
-	err = secrets.SetSecret(profile, region, "", "secrets", client, environment, sluggifiedName, "system-info", string(parameterValue))
+	normal["system_name"] = systemInfo.SystemName.String
+	normal["url"] = systemInfo.URL.String
+	normal["user_name"] = systemInfo.Username.String
+	normal["password"] = systemInfo.Password.String
+	normal["enabled_yn"] = strconv.FormatBool(systemInfo.EnabledYN)
+	normal["notes"] = systemInfo.Notes.String
+	normal["system_properties"] = systemInfo.SystemProperties.String
+	normal["config_data"] = systemInfo.ConfigData.String
+	normal["validation_class_name"] = systemInfo.ValidationClassName.String
+	normal["aws_system_type"] = systemInfo.AwsSystemType.String
+	normalized, err := json.Marshal(normal)
+	if err != nil {
+		return "", err
+	}
+	return string(normalized), err
+}
+
+func Denormalize(system, url, username, password, notes, systemProperties, configData, validationClass, awsSystemType string, enabled bool) string {
+
+	denormal := make(map[string]string, 0)
+	denormal["system_name"] = Unsluggify(system)
+	denormal["url"] = url
+	denormal["user_name"] = username
+	denormal["password"] = password
+	denormal["enabled_yn"] = strconv.FormatBool(enabled)
+	denormal["notes"] = notes
+	denormal["system_properties"] = systemProperties
+	denormal["config_data"] = configData
+	denormal["validation_class_name"] = validationClass
+	denormal["aws_system_type"] = awsSystemType
+	denormalized, err := json.Marshal(denormal)
+	if err != nil {
+		return ""
+	}
+	return string(denormalized)
+}
+
+func SetSystemInfo(profile, region, sluggifiedName, client, environment string, systemInfo string) error {
+
+	err := secrets.SetSecret(profile, region, "", "secrets", client, environment, sluggifiedName, "system-info", systemInfo)
 	if err != nil {
 		return fmt.Errorf("failed to put parameter in Parameter Store: %v", err)
 	}
 
-	fmt.Printf("Stored parameter for system: %s\n", systemInfo.SystemName.String)
+	fmt.Printf("Stored parameter for system: %s\n", sluggifiedName)
 	return nil
 }
 
@@ -81,9 +118,6 @@ func GetSQL(profile, region, client, environment, system string) (string, error)
 
 	query := `
 		SELECT 
-			version, 
-			effective_date_time, 
-			expiration_date_time, 
 			system_name, 
 			url, 
 			user_name, 
@@ -91,7 +125,6 @@ func GetSQL(profile, region, client, environment, system string) (string, error)
 			enabled_yn, 
 			notes, 
 			system_properties, 
-			secret_manager_id, 
 			config_data, 
 			validation_class_name, 
 			aws_system_type 
@@ -125,17 +158,13 @@ func MigrateSystemInfo(profile, region, client, environment, system string) erro
 		var enabledYNBit []byte
 
 		if err := rows.Scan(
-			&systemInfo.Version,
-			&systemInfo.EffectiveDateTime,
-			&systemInfo.ExpirationDateTime,
 			&systemInfo.SystemName,
 			&systemInfo.URL,
-			&systemInfo.UserName,
+			&systemInfo.Username,
 			&systemInfo.Password,
 			&enabledYNBit,
 			&systemInfo.Notes,
 			&systemInfo.SystemProperties,
-			&systemInfo.SecretManagerID,
 			&systemInfo.ConfigData,
 			&systemInfo.ValidationClassName,
 			&systemInfo.AwsSystemType,
@@ -146,8 +175,11 @@ func MigrateSystemInfo(profile, region, client, environment, system string) erro
 		systemInfo.EnabledYN = len(enabledYNBit) > 0 && enabledYNBit[0] == 1
 
 		sluggifiedName := Sluggify(systemInfo.SystemName.String)
-
-		err = SetSystemInfo(profile, region, sluggifiedName, client, environment, systemInfo)
+		parameterValue, err := Normalize(systemInfo)
+		if err != nil {
+			return fmt.Errorf("failed to marshal system info to JSON: %v", err)
+		}
+		err = SetSystemInfo(profile, region, sluggifiedName, client, environment, parameterValue)
 		if err != nil {
 			return err
 		}

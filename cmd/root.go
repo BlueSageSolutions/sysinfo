@@ -16,7 +16,7 @@ var Environment string
 var System string
 
 var URL string
-var UserName string
+var Username string
 var Password string
 var Notes string
 var SystemProperties string
@@ -24,6 +24,8 @@ var ConfigData string
 var ValidationClass string
 var AwsSystemType string
 var Enabled bool
+
+var VERSION string = "v0.0.1"
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{

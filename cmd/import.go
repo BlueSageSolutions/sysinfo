@@ -11,9 +11,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func MustHave() bool {
-	if len(Client) == 0 || len(Environment) == 0 {
-		return false
+func MustHave(strings ...string) bool {
+	for _, str := range strings {
+		if len(str) == 0 {
+			return false
+		}
 	}
 	return true
 }
@@ -24,7 +26,7 @@ var importCmd = &cobra.Command{
 	Short: "Import system info records into parameter store",
 	Long:  `Import system info records into parameter store`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if !MustHave() {
+		if !MustHave(Client, Environment) {
 			fmt.Println("Missing client or environment")
 			os.Exit(1)
 		}
@@ -38,9 +40,9 @@ var importCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(importCmd)
-	importCmd.Flags().StringVarP(&ProfileName, "profile", "p", "", "Profile name used for secrets account")
-	importCmd.Flags().StringVarP(&Region, "region", "r", "us-east-1", "Region used for secrets account")
-	importCmd.Flags().StringVarP(&Client, "client", "c", "", "Name of client account. Use the client code always!")
-	importCmd.Flags().StringVarP(&Environment, "environment", "e", "", "Environment")
+	importCmd.Flags().StringVar(&ProfileName, "profile", "", "Profile name used for secrets account")
+	importCmd.Flags().StringVar(&Region, "region", "us-east-1", "Region used for secrets account")
+	importCmd.Flags().StringVar(&Client, "client", "", "Name of client account. Use the client code always!")
+	importCmd.Flags().StringVar(&Environment, "environment", "", "Environment")
 	importCmd.Flags().StringVar(&System, "system", "", "System name")
 }
